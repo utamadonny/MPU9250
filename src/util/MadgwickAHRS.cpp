@@ -139,7 +139,7 @@ void Madgwick::update(float gx, float gy, float gz, float ax, float ay, float az
 	q3 += qDot4 * invSampleFreq;
 
 	// Normalise quaternion
-	recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+	recipNorm = invSqrt(q0q0 + q1q1 + q2q2 + q3q3);
 	q0 *= recipNorm;
 	q1 *= recipNorm;
 	q2 *= recipNorm;
@@ -218,7 +218,7 @@ void Madgwick::updateIMU(float gx, float gy, float gz, float ax, float ay, float
 	q3 += qDot4 * invSampleFreq;
 
 	// Normalise quaternion
-	recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+	recipNorm = invSqrt(q0q0 + q1q1 + q2q2 + q3q3);
 	q0 *= recipNorm;
 	q1 *= recipNorm;
 	q2 *= recipNorm;
@@ -245,12 +245,13 @@ float Madgwick::invSqrt(float x) {
 }
 
 //-------------------------------------------------------------------------------------------
-
+// Quaternion to 3D Rotation
+// see : https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_Angles_Conversion
 void Madgwick::computeAngles()
 {
-	roll = atan2f(q0*q1 + q2*q3, 0.5f - q1*q1 - q2*q2);
-	pitch = asinf(-2.0f * (q1*q3 - q0*q2));
-	yaw = atan2f(q1*q2 + q0*q3, 0.5f - q2*q2 - q3*q3);
+	roll = atan2f(q0 * q1 + q2 * q3, 0.5f - q1q1 - q2q2);
+	pitch = asinf(-2.0f * (q1 * q3 - q0 * q2));
+	yaw = atan2f(q1 * q2 + q0 * q3, 0.5f - q2q2 - q3q3);
 	anglesComputed = 1;
 }
 
