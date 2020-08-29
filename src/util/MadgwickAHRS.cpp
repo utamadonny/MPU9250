@@ -25,7 +25,7 @@
 //-------------------------------------------------------------------------------------------
 // Definitions
 
-#define sampleFreqDef   512.0f          // sample frequency in Hz
+#define sampleFreqDef   1500.0f          // sample frequency in Hz
 #define betaDef         0.1f            // 2 * proportional gain
 
 
@@ -34,7 +34,7 @@
 
 //-------------------------------------------------------------------------------------------
 // AHRS algorithm update
-Madgwick::Madgwick() : roll(0), pitch(0), yaw(0), anglesComputed(0)  {
+Madgwick::Madgwick() : roll(0), pitch(0), yaw(0), anglesComputed(0), quaternioned(0), a0(0),a1(0),a2(0),a3(0) {
 	beta = betaDef;
 	q0 = 1.0f;
 	q1 = 0.0f;
@@ -48,8 +48,8 @@ void Madgwick::update(float gx, float gy, float gz, float ax, float ay, float az
 	float s0, s1, s2, s3;
 	float qDot1, qDot2, qDot3, qDot4;
 	float hx, hy;
-	float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
-
+	float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _8bx, _8bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+ 
 	// Use IMU algorithm if magnetometer measurement invalid (avoids NaN in magnetometer normalisation)
 	if((mx == 0.0f) && (my == 0.0f) && (mz == 0.0f)) {
 		updateIMU(gx, gy, gz, ax, ay, az);
@@ -106,24 +106,45 @@ void Madgwick::update(float gx, float gy, float gz, float ax, float ay, float az
 		q2q3 = q2 * q3;
 		q3q3 = q3 * q3;
 
-		// Reference direction of Earth's magnetic field
-		hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
-		hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
-		_2bx = sqrtf(hx * hx + hy * hy);
-		_2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
-		_4bx = 2.0f * _2bx;
-		_4bz = 2.0f * _2bz;
+		// // Reference direction of Earth's magnetic field
+		// hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
+		// hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
+		// _2bx = sqrtf(hx * hx + hy * hy);
+		// _2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
+		// _4bx = 2.0f * _2bx;
+		// _4bz = 2.0f * _2bz;
 
+		// Reference direction of Earth's magnetic field
+        hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
+        hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
+        _2bx = sqrt(hx * hx + hy * hy);
+        _2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
+        _4bx = 2.0f * _2bx;
+        _4bz = 2.0f * _2bz;
+        _8bx = 2.0f * _4bx;
+        _8bz = 2.0f * _4bz;
+
+		// // Gradient decent algorithm corrective step
+		// s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) + _2q1 * (2.0f * q0q1 + _2q2q3 - ay) - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+		// s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax) + _2q0 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q1 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+		// s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax) + _2q3 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q2 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+		// s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax) + _2q2 * (2.0f * q0q1 + _2q2q3 - ay) + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+		// recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
+		// s0 *= recipNorm;
+		// s1 *= recipNorm;
+		// s2 *= recipNorm;
+		// s3 *= recipNorm;
+		
 		// Gradient decent algorithm corrective step
-		s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) + _2q1 * (2.0f * q0q1 + _2q2q3 - ay) - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax) + _2q0 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q1 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax) + _2q3 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q2 * (1 - 2.0f * q1q1 - 2.0f * q2q2 - az) + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax) + _2q2 * (2.0f * q0q1 + _2q2q3 - ay) + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-		recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
-		s0 *= recipNorm;
-		s1 *= recipNorm;
-		s2 *= recipNorm;
-		s3 *= recipNorm;
+		s0= -_2q2*(2.0f*(q1q3 - q0q2) - ax)    +   _2q1*(2.0f*(q0q1 + q2q3) - ay)   +  -_4bz*q2*(_4bx*(0.5 - q2q2 - q3q3) + _4bz*(q1q3 - q0q2) - mx)   +   (-_4bx*q3+_4bz*q1)*(_4bx*(q1q2 - q0q3) + _4bz*(q0q1 + q2q3) - my)    +   _4bx*q2*(_4bx*(q0q2 + q1q3) + _4bz*(0.5 - q1q1 - q2q2) - mz);
+        s1= _2q3*(2.0f*(q1q3 - q0q2) - ax) +   _2q0*(2.0f*(q0q1 + q2q3) - ay) +   -4.0f*q1*(2.0f*(0.5 - q1q1 - q2q2) - az)    +   _4bz*q3*(_4bx*(0.5 - q2q2 - q3q3) + _4bz*(q1q3 - q0q2) - mx)   + (_4bx*q2+_4bz*q0)*(_4bx*(q1q2 - q0q3) + _4bz*(q0q1 + q2q3) - my)   +   (_4bx*q3-_8bz*q1)*(_4bx*(q0q2 + q1q3) + _4bz*(0.5 - q1q1 - q2q2) - mz);
+        s2= -_2q0*(2.0f*(q1q3 - q0q2) - ax)    +     _2q3*(2.0f*(q0q1 + q2q3) - ay)   +   (-4.0f*q2)*(2.0f*(0.5 - q1q1 - q2q2) - az) +   (-_8bx*q2-_4bz*q0)*(_4bx*(0.5 - q2q2 - q3q3) + _4bz*(q1q3 - q0q2) - mx)+(_4bx*q1+_4bz*q3)*(_4bx*(q1q2 - q0q3) + _4bz*(q0q1 + q2q3) - my)+(_4bx*q0-_8bz*q2)*(_4bx*(q0q2 + q1q3) + _4bz*(0.5 - q1q1 - q2q2) - mz);
+        s3= _2q1*(2.0f*(q1q3 - q0q2) - ax) +   _2q2*(2.0f*(q0q1 + q2q3) - ay)+(-_8bx*q3+_4bz*q1)*(_4bx*(0.5 - q2q2 - q3q3) + _4bz*(q1q3 - q0q2) - mx)+(-_4bx*q0+_4bz*q2)*(_4bx*(q1q2 - q0q3) + _4bz*(q0q1 + q2q3) - my)+(_4bx*q1)*(_4bx*(q0q2 + q1q3) + _4bz*(0.5 - q1q1 - q2q2) - mz);
+        recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
+        s0 *= recipNorm;
+        s1 *= recipNorm;
+        s2 *= recipNorm;
+        s3 *= recipNorm;
 
 		// Apply feedback step
 		qDot1 -= beta * s0;
@@ -145,6 +166,7 @@ void Madgwick::update(float gx, float gy, float gz, float ax, float ay, float az
 	q2 *= recipNorm;
 	q3 *= recipNorm;
 	anglesComputed = 0;
+	quaternioned =0;
 }
 
 //-------------------------------------------------------------------------------------------
@@ -224,6 +246,7 @@ void Madgwick::updateIMU(float gx, float gy, float gz, float ax, float ay, float
 	q2 *= recipNorm;
 	q3 *= recipNorm;
 	anglesComputed = 0;
+	quaternioned =0;
 }
 
 //-------------------------------------------------------------------------------------------
@@ -233,15 +256,22 @@ void Madgwick::updateIMU(float gx, float gy, float gz, float ax, float ay, float
 // you may get 'dereferencing type-punned pointer' warnings here,
 // 'cause this related to a spell (0x5F3759DF) that works on
 // 32-bit floats in IEEE 754 format. So... magics.
-float Madgwick::invSqrt(float x) {
-	float halfx = 0.5f * x;
-	float y = x;
-	long i = *(long*)&y;
-	i = 0x5f3759df - (i>>1);
-	y = *(float*)&i;
-	y = y * (1.5f - (halfx * y * y));
-	y = y * (1.5f - (halfx * y * y));
-	return y;
+
+// float Madgwick::invSqrt(float x) {
+// 	float halfx = 0.5f * x;
+// 	float y = x;
+// 	long i = *(long*)&y;
+// 	i = 0x5f3759df - (i>>1);
+// 	y = *(float*)&i;
+// 	y = y * (1.5f - (halfx * y * y));
+// 	y = y * (1.5f - (halfx * y * y));
+// 	return y;
+// }
+
+float Madgwick::invSqrt(float x)
+{
+    float tmp = 1/(sqrt(x));
+    return tmp;
 }
 
 //-------------------------------------------------------------------------------------------
@@ -249,9 +279,18 @@ float Madgwick::invSqrt(float x) {
 // see : https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_Angles_Conversion
 void Madgwick::computeAngles()
 {
-	roll = atan2f(q0 * q1 + q2 * q3, 0.5f - q1q1 - q2q2);
-	pitch = asinf(-2.0f * (q1 * q3 - q0 * q2));
-	yaw = atan2f(q1 * q2 + q0 * q3, 0.5f - q2q2 - q3q3);
+	float q0q0=q0*q0, q0q1=q0*q1, q0q2=q0*q2, q0q3=q0*q3, q1q1 = q1*q1, q1q2=q1*q2,	q1q3=q1*q3,	q2q2=q2*q2,	q2q3=q2*q3,q3q3=q3*q3;
+	roll = atan2f(q0q1 + q2q3, 0.5f - q1q1 - q2q2);
+	pitch = asinf(-2.0f * (q1q3 - q0q2));
+	yaw = atan2f(q1q2 + q0q3, 0.5f - q2q2 - q3q3);
 	anglesComputed = 1;
+}
+// add quaternion output 
+void Madgwick::quaternion()
+{
+	a0=q0;
+	a1=q1;
+	a2=q2;
+	a3=q3;
 }
 
